@@ -1,0 +1,7 @@
+# Default ownership for production changes
+* @hamzaabdiss06-crypto
+
+# Security-sensitive files
+/server.ts @hamzaabdiss06-crypto
+/firestore.rules @hamzaabdiss06-crypto
+/.github/ @hamzaabdiss06-crypto
