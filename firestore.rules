@@ -1,0 +1,133 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // -------------------------------------------------------------------------
+    // Core Authentication & Tenant Functions
+    // -------------------------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getClaims() {
+      return request.auth.token;
+    }
+
+    function getTenantId() {
+      // Allow for both a specific token claim or testing overrides
+      return getClaims().tenantId;
+    }
+
+    function getRole() {
+      return getClaims().role;
+    }
+
+    function isPlatformAdmin() {
+      return isSignedIn() && getRole() == 'platform_admin';
+    }
+
+    function isTenantMember(tenantId) {
+      return isSignedIn() 
+        && getTenantId() != null 
+        && getTenantId() == tenantId;
+    }
+
+    function isTenantAdmin(tenantId) {
+      return isTenantMember(tenantId) && getRole() == 'tenant_admin';
+    }
+
+    function isTenantManager(tenantId) {
+      return isTenantMember(tenantId) && (getRole() == 'tenant_admin' || getRole() == 'manager');
+    }
+
+    function isTenantStaff(tenantId) {
+      return isTenantMember(tenantId) && (getRole() == 'tenant_admin' || getRole() == 'manager' || getRole() == 'staff');
+    }
+
+    function isTenantDriver(tenantId) {
+      return isTenantMember(tenantId) && getRole() == 'driver';
+    }
+
+    // -------------------------------------------------------------------------
+    // Default Deny
+    // -------------------------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Tenants Root
+    // -------------------------------------------------------------------------
+    match /tenants/{tenantId} {
+      // Platform Admin can do anything
+      allow read, write: if isPlatformAdmin();
+
+      // Tenant members can read their own tenant config
+      allow get: if isTenantMember(tenantId);
+      allow update: if isTenantAdmin(tenantId);
+      allow create, delete: if false;
+
+      // -----------------------------------------------------------------------
+      // Subcollections
+      // -----------------------------------------------------------------------
+      match /orders/{orderId} {
+        // Staff/manager/admin can read all tenant orders
+        allow read: if isTenantStaff(tenantId) || isPlatformAdmin() || (isTenantDriver(tenantId) && resource.data.assignedDriverId == request.auth.uid);
+        
+        allow create: if isPlatformAdmin() || (isTenantStaff(tenantId) 
+          && request.resource.data.tenantId == tenantId);
+          
+        allow update: if isPlatformAdmin() || (isTenantStaff(tenantId) 
+          && resource.data.tenantId == tenantId 
+          && request.resource.data.tenantId == tenantId) || (isTenantDriver(tenantId) && resource.data.assignedDriverId == request.auth.uid && resource.data.tenantId == tenantId && request.resource.data.tenantId == tenantId);
+
+        allow delete: if isPlatformAdmin() || isTenantAdmin(tenantId);
+      }
+
+      match /staff/{staffId} {
+        allow read: if isTenantMember(tenantId) || isPlatformAdmin();
+        allow create: if isPlatformAdmin() || (isTenantManager(tenantId) && request.resource.data.tenantId == tenantId);
+        allow update: if isPlatformAdmin() || (isTenantManager(tenantId) && resource.data.tenantId == tenantId && request.resource.data.tenantId == tenantId);
+        allow delete: if isPlatformAdmin() || isTenantAdmin(tenantId);
+      }
+      
+      match /drivers/{driverId} {
+        allow read: if isTenantMember(tenantId) || isPlatformAdmin();
+        allow create: if isPlatformAdmin() || (isTenantManager(tenantId) && request.resource.data.tenantId == tenantId);
+        allow update: if isPlatformAdmin() || (isTenantManager(tenantId) && resource.data.tenantId == tenantId && request.resource.data.tenantId == tenantId) || (isTenantDriver(tenantId) && request.auth.uid == driverId && request.resource.data.tenantId == tenantId);
+        allow delete: if isPlatformAdmin() || isTenantAdmin(tenantId);
+        
+        match /locations/{locationId} {
+           allow read: if isTenantStaff(tenantId) || isPlatformAdmin() || (isTenantDriver(tenantId) && request.auth.uid == driverId);
+           allow create: if isPlatformAdmin() || (isTenantDriver(tenantId) && request.auth.uid == driverId && request.resource.data.driverId == driverId && request.resource.data.tenantId == tenantId);
+           allow update, delete: if false; // immutable
+        }
+      }
+      
+      match /customers/{customerId} {
+        allow read: if isTenantStaff(tenantId) || isPlatformAdmin();
+        allow create: if isPlatformAdmin() || (isTenantStaff(tenantId) && request.resource.data.tenantId == tenantId);
+        allow update: if isPlatformAdmin() || (isTenantStaff(tenantId) && resource.data.tenantId == tenantId && request.resource.data.tenantId == tenantId);
+        allow delete: if isPlatformAdmin() || isTenantAdmin(tenantId);
+      }
+
+      match /vehicles/{vehicleId} {
+        allow read: if isTenantMember(tenantId) || isPlatformAdmin();
+        allow create, update, delete: if isPlatformAdmin() || isTenantManager(tenantId);
+      }
+
+      match /reports/{reportId} {
+        allow read: if isPlatformAdmin() || isTenantManager(tenantId);
+        allow create, update, delete: if isPlatformAdmin() || isTenantAdmin(tenantId);
+      }
+      
+      match /audit_logs/{logId} {
+         allow read: if isPlatformAdmin() || isTenantAdmin(tenantId);
+         allow create: if isPlatformAdmin() || isTenantMember(tenantId);
+         allow update, delete: if false;
+      }
+    }
+  }
+}
+
+
+

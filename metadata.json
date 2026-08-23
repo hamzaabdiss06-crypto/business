@@ -1,0 +1,10 @@
+{
+  "name": "Multi-Tenant Order Tracking System",
+  "description": "Multi-tenant order tracking platform with real-time GPS map updates, M-Pesa payment integration, and Firebase multi-tenant Firestore database.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
